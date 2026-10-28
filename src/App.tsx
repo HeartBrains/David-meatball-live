@@ -152,12 +152,13 @@ function Dashboard() {
   async function load() {
     setRefreshing(true);
     try {
-      const [dashboard, result] = await Promise.all([
+      const [dashboard, recentReports] = await Promise.all([
         api<DashboardData>("/api/dashboard"),
-        api<{ data: ReportSummary[] }>("/api/reports?limit=6"),
+        api<ReportSummary[]>("/api/reports?limit=6"),
       ]);
+      if (!Array.isArray(recentReports)) throw new Error("รูปแบบข้อมูลรายงานล่าสุดไม่ถูกต้อง");
       setSummary(dashboard);
-      setReports(result.data);
+      setReports(recentReports);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "โหลดข้อมูลไม่สำเร็จ");
@@ -227,8 +228,9 @@ function ReportsPage() {
     if (to) params.set("to", to);
     if (status) params.set("status", status);
     try {
-      const result = await api<{ data: ReportSummary[] }>(`/api/reports?${params}`);
-      setReports(result.data);
+      const result = await api<ReportSummary[]>(`/api/reports?${params}`);
+      if (!Array.isArray(result)) throw new Error("รูปแบบข้อมูลรายงานไม่ถูกต้อง");
+      setReports(result);
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "โหลดรายงานไม่สำเร็จ"); }
   }
