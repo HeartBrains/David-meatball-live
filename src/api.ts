@@ -16,20 +16,33 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  const result = await response.json().catch(() => null) as ApiResult<T> | null;
-  if (!response.ok || !result?.success) {
-    const message = result?.error?.message ?? `เชื่อมต่อระบบไม่สำเร็จ (${response.status})`;
-    throw new ApiError(response.status, result?.error?.code ?? "REQUEST_FAILED", message);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(path, {
+      ...init,
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+    const result = await response.json().catch(() => null) as ApiResult<T> | null;
+    if (!response.ok || !result?.success) {
+      const message = result?.error?.message ?? `เชื่อมต่อระบบไม่สำเร็จ (${response.status})`;
+      throw new ApiError(response.status, result?.error?.code ?? "REQUEST_FAILED", message);
+    }
+    return result.data;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, "REQUEST_TIMEOUT", "ระบบตอบกลับช้าเกินไป กรุณาตรวจอินเทอร์เน็ตแล้วลองโหลดหน้าใหม่");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  return result.data;
 }
 
 export function bangkokDate(date = new Date()) {
