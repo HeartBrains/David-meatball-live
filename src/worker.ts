@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { requireAdmin } from "./auth";
 import { createProduct, createReport, currentInventory, dashboardSummary, getReport, listProducts, listReports, updateProduct, updateReport } from "./db";
 import { createAdminMcpHandler } from "./mcp";
+import { currentBangkokDate, renderPublicForm } from "./publicForm";
 import { productSchema, reportSchema, updateProductSchema, updateReportSchema } from "./schemas";
 import type { AdminIdentity, Env } from "./types";
 
@@ -9,6 +10,67 @@ type Variables = { admin: AdminIdentity };
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.get("/health", (c) => c.json({ service: "David Meatball Live", status: "ok" }));
+
+app.get("/submit", async (c) => renderPublicForm(await listProducts(c.env.DB)));
+
+app.post("/submit", async (c) => {
+  const contentType = c.req.header("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return c.json({ success: false, error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "กรุณาส่งข้อมูลผ่านฟอร์มนี้เท่านั้น" } }, 415);
+  }
+  const contentLength = Number(c.req.header("Content-Length") ?? 0);
+  if (contentLength > 128_000) {
+    return c.json({ success: false, error: { code: "PAYLOAD_TOO_LARGE", message: "ข้อมูลมีขนาดใหญ่เกินไป" } }, 413);
+  }
+  const ip = c.req.header("CF-Connecting-IP");
+  if (!ip) return c.json({ success: false, error: { code: "REQUEST_REJECTED", message: "ไม่สามารถตรวจสอบคำขอได้" } }, 400);
+  const rate = await c.env.PUBLIC_FORM_LIMITER.limit({ key: ip });
+  if (!rate.success) {
+    return c.json({ success: false, error: { code: "RATE_LIMITED", message: "ส่งข้อมูลบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่" } }, 429, { "Retry-After": "60" });
+  }
+
+  const rawBody = await c.req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 128_000) {
+    return c.json({ success: false, error: { code: "PAYLOAD_TOO_LARGE", message: "ข้อมูลมีขนาดใหญ่เกินไป" } }, 413);
+  }
+  const body = await Promise.resolve().then(() => JSON.parse(rawBody)).catch(() => null) as (Record<string, unknown> & { website?: unknown }) | null;
+  if (!body) return c.json({ success: false, error: { code: "INVALID_INPUT", message: "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง" } }, 400);
+  if (typeof body.website === "string" && body.website.trim()) {
+    return c.json({ success: true, message: "ได้รับข้อมูลแล้ว" }, 201);
+  }
+  const parsed = reportSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ success: false, error: { code: "INVALID_INPUT", message: "ตรวจสอบวันที่ ชื่อผู้บันทึก และข้อมูลสินค้าอีกครั้ง" } }, 400);
+  }
+  const today = currentBangkokDate();
+  const tomorrowDate = new Date(`${today}T12:00:00Z`);
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+  if (parsed.data.reportDate !== today || parsed.data.nextDate !== tomorrowDate.toISOString().slice(0, 10)) {
+    return c.json({ success: false, error: { code: "DATE_OUT_OF_RANGE", message: "ฟอร์มสาธารณะใช้บันทึกข้อมูลของวันนี้เท่านั้น" } }, 400);
+  }
+  const products = await listProducts(c.env.DB);
+  const submittedIds = new Set(parsed.data.lines.map((line) => line.productId));
+  if (submittedIds.size !== products.length || products.some((product) => !submittedIds.has(product.id))) {
+    return c.json({ success: false, error: { code: "CATALOG_CHANGED", message: "รายการสินค้ามีการเปลี่ยนแปลง กรุณาโหลดฟอร์มใหม่" } }, 409);
+  }
+  if (!parsed.data.lines.some((line) => line.remainingQuantity !== null || line.orderQuantity !== null)) {
+    return c.json({ success: false, error: { code: "EMPTY_REPORT", message: "กรุณากรอกจำนวนอย่างน้อยหนึ่งรายการ" } }, 400);
+  }
+
+  try {
+    const report = await createReport(c.env.DB, { email: "public-form" }, parsed.data, `public:${crypto.randomUUID()}`);
+    return c.json({
+      success: true,
+      message: `บันทึกข้อมูลวันที่ ${report.reportDate} เรียบร้อยแล้ว`,
+      data: { reportDate: report.reportDate, nextDate: report.nextDate },
+    }, 201, { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      return c.json({ success: false, error: { code: "DUPLICATE_RECORD", message: "วันที่นี้มีรายงานแล้ว กรุณาติดต่อผู้ดูแลหากต้องการแก้ไข" } }, 409);
+    }
+    throw error;
+  }
+});
 
 app.use("*", requireAdmin);
 app.use("/api/*", async (c, next) => {

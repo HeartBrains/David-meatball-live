@@ -8,6 +8,8 @@
 - Cloudflare Access ครอบ URL นี้และใช้ allowlist ผู้ดูแลเดิม; Worker ตรวจ `ADMIN_EMAILS` ซ้ำจาก secret
 - D1 `david-meatball-live-db` สร้างแล้วและใช้ migration เริ่มต้นแล้ว
 - MCP ปิดไว้ (`MCP_ENABLED=false`) จนกว่าจะต้องการเปิดใช้งาน
+- ฟอร์มสาธารณะสำหรับกรอกสต็อก/จำนวนสั่งประจำวัน: [เปิดฟอร์ม](https://david-meatball-live.thaicms.workers.dev/submit)
+- เปิด public เฉพาะ `GET/POST /submit`; dashboard, ประวัติ และ API อื่นยังต้องผ่าน Cloudflare Access และ Worker allowlist
 - ยังไม่ได้ผูก custom domain; ใช้ URL `workers.dev` ข้างต้น
 
 ## ขอบเขตรุ่นแรก
@@ -85,9 +87,16 @@ npm run dev
 - Tools: `list_products`, `list_daily_reports`, `get_daily_report`, `create_daily_report`, `update_daily_report`, `create_product`, `update_product`
 - `MCP_ENABLED` ปิดไว้เป็นค่าเริ่มต้น
 
+## ฟอร์มสาธารณะ
+
+- ใช้ URL `/submit` กรอกสต็อกและจำนวนสั่งสำหรับวันที่ปัจจุบัน; ฟอร์มสร้างรายงานใหม่เท่านั้นและไม่มีสิทธิ์อ่าน/แก้ไขข้อมูลเดิม
+- Cloudflare Access ต้องตั้งแอปแบบ Bypass เฉพาะ path `/submit`; แอป Access หลักและ Worker allowlist ยังป้องกันทุก path อื่น
+- Worker จำกัดการส่ง 5 ครั้งต่อนาทีต่อ IP, รับเฉพาะ JSON จากฟอร์ม, จำกัด body 128 KB, ตรวจ honeypot, ตรวจรายการสินค้าปัจจุบัน และปฏิเสธรายงานซ้ำ/วันที่อื่น
+- รายงานหนึ่งรายการต่อวันตาม unique constraint; หลังบันทึกแล้วผู้กรอกต้องติดต่อผู้ดูแลเพื่อแก้ไข
+
 ## Security notes
 
 - ห้าม commit `.dev.vars`, Access tokens, database secrets หรือ credentials
 - Cloudflare Access เป็นชั้นล็อกอิน; Worker ตรวจ signature, issuer, audience และอีเมล allowlist ซ้ำ
-- มีเพียง `/health` ที่เปิดเป็น public status endpoint; routes อื่นต้องผ่าน admin middleware
+- `/health` เป็น public status endpoint และ `/submit` เป็น public write-only form; routes/API อื่นต้องผ่าน admin middleware
 - API และ MCP ไม่มีเครื่องมือ SQL หรือการลบข้อมูลแบบ hard delete

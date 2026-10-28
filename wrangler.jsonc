@@ -23,6 +23,13 @@
     "CF_ACCESS_ISSUER": "https://applicationcms.cloudflareaccess.com",
     "CF_ACCESS_AUD": "d1f59c7c706765a1584685cdd65946ccd1f695e6ea04056ebe72498af4f9e6a8"
   },
+  "ratelimits": [
+    {
+      "name": "PUBLIC_FORM_LIMITER",
+      "namespace_id": "2026102801",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
   "observability": {
     "enabled": true
   }

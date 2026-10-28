@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, Boxes, CalendarDays, Check, ChevronRight,
   ClipboardList, FilePlus2, LayoutDashboard, LoaderCircle, Package, Pencil, Plus, RefreshCw,
-  Save, Search, Settings2, ShieldCheck, ShoppingBasket, X,
+  ExternalLink, Save, Search, Settings2, ShieldCheck, ShoppingBasket, X,
 } from "lucide-react";
 import { Link, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { addDays, api, bangkokDate, formatNumber, formatThaiDate } from "./api";
@@ -174,7 +174,7 @@ function Dashboard() {
         eyebrow="ภาพรวมประจำวัน"
         title="สวัสดี, เริ่มจัดการสต็อกกัน"
         description="บันทึกยอดคงเหลือและจำนวนถุงที่ต้องสั่ง ตรวจประวัติได้ในที่เดียว"
-        action={<Link className="button button-dark" to="/reports/new"><Plus size={17} /> บันทึกรายการวันนี้</Link>}
+        action={<div className="heading-actions"><a className="button button-outline" href="/submit" target="_blank" rel="noreferrer"><ExternalLink size={16} /> ฟอร์มสาธารณะ</a><Link className="button button-dark" to="/reports/new"><Plus size={17} /> บันทึกรายการวันนี้</Link></div>}
       />
       {error && <Notice message={error} onRetry={load} />}
       <section className="metric-grid">

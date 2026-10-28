@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  PUBLIC_FORM_LIMITER: RateLimit;
   ENVIRONMENT?: string;
   ADMIN_EMAILS?: string;
   DEV_ADMIN_EMAIL?: string;

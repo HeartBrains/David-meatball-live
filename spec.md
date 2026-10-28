@@ -1,13 +1,13 @@
 # David Meatball Live — ข้อกำหนดระบบสต็อกและจัดการรายการสั่งของ
 
-> สถานะ: implementation และ initial production deploy เสร็จแล้ว; ป้องกันด้วย Cloudflare Access และ Worker allowlist; MCP ปิดไว้
+> สถานะ: ระบบหลัก deploy แล้ว; public form ใช้ `GET/POST /submit` เท่านั้น โดย Worker จำกัดสิทธิ์เป็นสร้างรายงานวันนี้; dashboard/API อื่นยังใช้ Cloudflare Access และ Worker allowlist; MCP ปิดไว้
 > Repo เป้าหมาย: [HeartBrains/David-meatball-live](https://github.com/HeartBrains/David-meatball-live)
 > หน้าอ้างอิงป้ายกำกับ: [applicationcms.com/david3b](https://www.applicationcms.com/david3b)
 > เวอร์ชันเอกสาร: 1.0 · 2026-10-28
 
 ## 1. เป้าหมาย
 
-สร้างระบบภาษาไทยบน Cloudflare Workers สำหรับผู้ดูแลเพียงคนเดียว ใช้บันทึกสต็อกลูกชิ้น/ไส้กรอก/อาหารแปรรูปและของประกอบร้าน พร้อมข้อมูลภาษาเมียนมา (พม่า) กำกับป้ายชื่อสินค้า ให้บันทึกจำนวนคงเหลือและจำนวนถุงที่ต้องสั่งรายวัน แก้ไขข้อมูลสินค้า/หน่วยบรรจุได้ และดูประวัติ/รายงานได้
+สร้างระบบภาษาไทยบน Cloudflare Workers สำหรับผู้ดูแลและผู้กรอกแบบสาธารณะ ใช้บันทึกสต็อกลูกชิ้น/ไส้กรอก/อาหารแปรรูปและของประกอบร้าน พร้อมข้อมูลภาษาเมียนมา (พม่า) กำกับป้ายชื่อสินค้า ผู้กรอกทั่วไปส่งรายงานประจำวันผ่านฟอร์ม public ได้ ส่วนการดู/แก้ประวัติ จัดการสินค้า และรายงานยังสงวนให้ผู้ดูแล
 
 ระบบใหม่ใช้ข้อมูลใน Cloudflare D1 เป็นแหล่งข้อมูลหลัก หน้าอ้างอิงใช้เป็นต้นทางของป้ายชื่อและ workflow เท่านั้น รุ่นแรกเริ่มบันทึกข้อมูลใหม่ ไม่เชื่อม Paperform/Sheet โดยตรง และไม่ import ประวัติเก่า; ออกแบบให้เพิ่ม CSV import สำหรับข้อมูลเก่าในภายหลังได้
 
@@ -154,13 +154,16 @@ React + TypeScript + Vite (UI ภาษาไทย/พม่ากำกับ)
 ### Authentication และความปลอดภัย
 
 - ป้องกัน dashboard/API ด้วย Cloudflare Access และตรวจ JWT ใน Worker; ตรวจ allowlist อีเมลแอดมินใน Worker เป็นชั้นที่สอง
-- ระบบรุ่นแรกมีผู้ดูแลคนเดียว; ทุกหน้า/API ที่อ่านหรือเขียนข้อมูลต้องยืนยันสิทธิ์แอดมินผ่าน Cloudflare Access และตรวจ allowlist ฝั่ง Worker
-- Public routes จำกัดเฉพาะ health/status และ route ที่ผู้ใช้ระบุชัด
-- ป้องกัน CSRF/CORS ตาม origin, validate input ที่ Worker และ D1, rate-limit API, no-store สำหรับหน้ารายงานส่วนบุคคล
+- dashboard, report/history, product management, MCP และ API แอดมินต้องผ่าน Cloudflare Access และตรวจ allowlist ฝั่ง Worker
+- เปิด public เฉพาะ `GET /submit` เพื่อแสดงรายการสินค้าและ `POST /submit` เพื่อสร้างรายงานของวันปัจจุบัน; ตั้ง Cloudflare Access Bypass policy เฉพาะ path `/submit` โดยแอป Access หลักและทุก path อื่นยังคงบังคับล็อกอิน
+- public form ไม่มี API อ่านรายงาน/ดูสินค้าแยกต่างหาก, ไม่มีสิทธิ์แก้/ลบ; Worker ตรวจ schema, วันที่วันนี้/วันถัดไป, product IDs ตรงกับ catalog active, ต้องมีค่าอย่างน้อยหนึ่งช่อง และป้องกันรายงานซ้ำด้วย unique constraint
+- ใช้ honeypot, จำกัด 5 requests/minute ต่อ IP ผ่าน Worker Rate Limiting binding, จำกัด body จริง 128 KB, no-store และ security headers; การจำกัด rate เป็น best-effort แบบกระจายตาม Cloudflare location
 - MCP ต้องยืนยันตัวตน client และผูกกับ admin allowlist; จำกัด scopes, มี audit/revocation และไม่เปิด endpoint สาธารณะ การเขียนผ่าน MCP ใช้ validation เดียวกับหน้าเว็บและไม่มี approval flow ซ้ำ
 
 ## 7. API ที่เสนอ
 
+- `GET /submit` — public, แสดงฟอร์มสต็อกและจำนวนสั่งสำหรับวันนี้พร้อม catalog active
+- `POST /submit` — public, write-only; สร้างรายงานวันนี้เท่านั้น ไม่อนุญาตให้แก้ย้อนหลัง และมี rate limit/duplicate guard
 - `GET /api/products` — สินค้าที่เปิดใช้และหน่วย/ป้ายสองภาษา
 - `POST /api/reports` — สร้างรายงานสต็อกประจำวัน พร้อม inventory lines
 - `GET /api/reports?from=&to=&status=` — ค้นรายงาน
@@ -181,18 +184,18 @@ React + TypeScript + Vite (UI ภาษาไทย/พม่ากำกับ)
 1. Scaffold repo เปล่า: Hono Worker, D1 migration, React/Vite UI, Wrangler config, CI build และคู่มือตั้งค่า โดยไม่ใส่ secrets
 2. สร้าง catalog สองภาษาและ migration พร้อม foreign keys, indexes, audit และ seed ป้ายชื่อจากหน้าอ้างอิง
 3. ทำ authentication แอดมินผ่าน Cloudflare Access + Worker allowlist และปกป้อง REST/MCP
-4. ทำ responsive form บันทึกยอดคงเหลือกับจำนวนสั่งที่กรอกเอง (ถุง), สถานะสั่ง/ไม่สั่ง, metadata สินค้า และ validation
+4. ทำ responsive admin form บันทึกข้อมูล และ public write-only form `GET/POST /submit` สำหรับรายงานวันนี้ พร้อม validation, honeypot, body limit และ rate limit
 5. ทำ dashboard, รายงาน, filters, history, edit flow, CSV export และ audit; ไม่คำนวณหรืออนุมัติจำนวนสั่งอัตโนมัติ
 6. ทำ MCP tools สำหรับ read/create/update ผ่าน service layer เดียวกับ REST พร้อม scopes, rate-limit และ audit
 7. ตรวจ build, migrations บน local D1, API, auth, MCP และ mobile UI ด้วยข้อมูลทดสอบ
-8. เมื่อ Cloudflare config พร้อม จึง deploy Worker/D1 migration และ smoke-check health, login, form, read/write, report และ MCP
+8. ตั้ง Cloudflare Access Bypass เฉพาะ `/submit` และ deploy จากนั้นตรวจ unauthenticated GET `/submit` สำเร็จ ขณะที่หน้า admin/API ยัง redirect หรือปฏิเสธผู้ไม่มีสิทธิ์; smoke-check health, form, read/write, report และ MCP
 
 ## 9. เกณฑ์สำเร็จ
 
 - หน้าฟอร์มภาษาไทยและป้ายพม่าตาม reference ครบทุกสินค้า/หน่วยที่ยืนยันแล้ว; ไม่มี label ว่างหรือทับกันบนมือถือ
-- ผู้ใช้ที่ไม่ใช่แอดมินถูกปฏิเสธทั้งหน้าเว็บ REST API และ MCP; ทั้งสามช่องทางใช้สิทธิ์เดียวกัน
+- ผู้ไม่มีสิทธิ์เข้า dashboard/REST API/MCP ไม่ได้; public เข้าได้เฉพาะ `/submit` และสร้างรายงานวันนี้ได้ โดยไม่มี endpoint อ่านหรือแก้ข้อมูลเดิม
 - ผู้ดูแลบันทึก/แก้ยอดคงเหลือและกรอกจำนวนสั่งเป็นถุงเองได้ทันที โดยไม่มีขั้นอนุมัติซ้ำหรือสูตรสั่งอัตโนมัติ
-- บันทึกรายวันแบบ atomic; submit ซ้ำโดยไม่ตั้งใจไม่สร้าง record ซ้ำ; ทุกการแก้ไขมี revision/audit
+- บันทึกรายวันแบบ atomic; public submit ได้ไม่เกิน 5 requests/minute ต่อ IP, payload เกิน 128 KB ถูกปฏิเสธ, วันที่อื่น/catalog เก่าถูกปฏิเสธ และ submit ซ้ำไม่สร้าง record ซ้ำ; admin edits มี revision/audit
 - รายงานยอดคงเหลือ/จำนวนถุงสั่งตรงกับ D1; ไม่มีการรวมยอดต่างหน่วยผิดพลาด
 - ค้นย้อนหลัง/กรองวัน/สถานะ/สินค้าและ export CSV ภาษาไทยได้
 - การเปลี่ยนชื่อ/ป้ายพม่า/หน่วยสินค้าไม่แก้ข้อมูล snapshot ในประวัติเดิม
