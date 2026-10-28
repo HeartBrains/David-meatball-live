@@ -1,0 +1,7 @@
+ENVIRONMENT=development
+ADMIN_EMAILS=admin@example.test
+DEV_ADMIN_EMAIL=admin@example.test
+MCP_ENABLED=true
+# Production uses Cloudflare Access JWT assertions and the admin email allowlist.
+CF_ACCESS_ISSUER=
+CF_ACCESS_AUD=

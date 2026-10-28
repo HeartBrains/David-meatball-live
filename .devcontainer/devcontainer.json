@@ -1,0 +1,10 @@
+{
+  "name": "David Meatball Live",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "postCreateCommand": "npm install",
+  "forwardPorts": [5173, 8787],
+  "portsAttributes": {
+    "5173": { "label": "Vite app", "onAutoForward": "openBrowser" },
+    "8787": { "label": "Cloudflare Worker", "onAutoForward": "notify" }
+  }
+}
