@@ -1,6 +1,6 @@
 # David Meatball Live — ข้อกำหนดระบบสต็อกและจัดการรายการสั่งของ
 
-> สถานะ: ระบบหลัก deploy แล้ว; public form ใช้ `GET/POST /submit` เท่านั้น โดย Worker จำกัดสิทธิ์เป็นสร้างรายงานวันนี้; dashboard/API อื่นยังใช้ Cloudflare Access และ Worker allowlist; MCP ปิดไว้
+> สถานะ: ระบบหลัก deploy แล้ว; public form ใช้ `GET/POST /submit` เท่านั้น โดย Worker ให้สร้างรายงานวันที่ย้อนหลังหรือวันนี้ได้ครั้งเดียวต่อวัน; dashboard/API อื่นยังใช้ Cloudflare Access และ Worker allowlist; MCP ปิดไว้
 > Repo เป้าหมาย: [HeartBrains/David-meatball-live](https://github.com/HeartBrains/David-meatball-live)
 > หน้าอ้างอิงป้ายกำกับ: [applicationcms.com/david3b](https://www.applicationcms.com/david3b)
 > เวอร์ชันเอกสาร: 1.0 · 2026-10-28
@@ -71,7 +71,7 @@
 - รับจำนวนคงเหลือเป็นตัวเลขไม่ติดลบ รองรับทศนิยมเฉพาะสินค้าที่ตั้งหน่วยเป็นน้ำหนัก/ปริมาตร
 - เก็บประวัติการบันทึกและการแก้ไข ไม่เขียนทับ audit log
 - มีผู้ดูแลคนเดียวตามสิทธิ์ที่กำหนด ไม่เปิดฟอร์มให้พนักงานหรือบุคคลทั่วไป
-- กันการกดบันทึกซ้ำด้วย idempotency; ค่าเริ่มต้นให้มีหนึ่งรายงานต่อคู่วันที่บันทึก/วันถัดไป และแก้รายงานเดิมได้
+- กันการกดบันทึกซ้ำด้วย idempotency; มีหนึ่งรายงานต่อวันที่บันทึก และแก้รายงานเดิมได้
 
 ### 3.2 สั่งเติมสินค้าและจัดการออเดอร์
 
@@ -149,21 +149,22 @@ React + TypeScript + Vite (UI ภาษาไทย/พม่ากำกับ)
 - `audit_events`: actor, action, entity, เวลา และรายละเอียดที่จำเป็น
 - `mcp_events`: บันทึก actor/tool/action/result แบบไม่เก็บ prompt หรือ secret; token grants จัดการตามวิธี auth ที่เลือก
 
-ความสัมพันธ์ให้ใช้ foreign key, idempotency key สำหรับ submit, unique constraint กันการส่งรายงานซ้ำโดยไม่ตั้งใจ, index ตามวันที่/สินค้า/สถานะ และ transaction สำหรับบันทึกรายงานกับรายการย่อย การแก้ไขต้องเพิ่ม audit event และ snapshot ในรายงานเก่าต้องไม่เปลี่ยนตาม catalog ปัจจุบัน
+ความสัมพันธ์ให้ใช้ foreign key, idempotency key สำหรับ submit, unique index บน `daily_reports.report_date` เพื่อกันหลายรายงานในวันเดียว, index ตามวันที่/สินค้า/สถานะ และ transaction สำหรับบันทึกรายงานกับรายการย่อย การแก้ไขต้องเพิ่ม audit event และ snapshot ในรายงานเก่าต้องไม่เปลี่ยนตาม catalog ปัจจุบัน
 
 ### Authentication และความปลอดภัย
 
 - ป้องกัน dashboard/API ด้วย Cloudflare Access และตรวจ JWT ใน Worker; ตรวจ allowlist อีเมลแอดมินใน Worker เป็นชั้นที่สอง
 - dashboard, report/history, product management, MCP และ API แอดมินต้องผ่าน Cloudflare Access และตรวจ allowlist ฝั่ง Worker
-- เปิด public เฉพาะ `GET /submit` เพื่อแสดงรายการสินค้าและ `POST /submit` เพื่อสร้างรายงานของวันปัจจุบัน; ตั้ง Cloudflare Access Bypass policy เฉพาะ path `/submit` โดยแอป Access หลักและทุก path อื่นยังคงบังคับล็อกอิน
-- public form ไม่มี API อ่านรายงาน/ดูสินค้าแยกต่างหาก, ไม่มีสิทธิ์แก้/ลบ; Worker ตรวจ schema, วันที่วันนี้/วันถัดไป, product IDs ตรงกับ catalog active, ต้องมีค่าอย่างน้อยหนึ่งช่อง และป้องกันรายงานซ้ำด้วย unique constraint
+- เปิด public เฉพาะ `GET /submit` เพื่อแสดงรายการสินค้าและ `POST /submit` เพื่อสร้างรายงานย้อนหลังหรือวันนี้; ห้ามเลือกวันที่ในอนาคต; ตั้ง Cloudflare Access Bypass policy เฉพาะ path `/submit` โดยแอป Access หลักและทุก path อื่นยังคงบังคับล็อกอิน
+- วันถัดไปตั้งต้นเป็นวันทำการถัดไปโดยข้ามวันอาทิตย์เมื่อเปลี่ยนวันที่บันทึก แต่ผู้กรอกแก้วันถัดไปได้; Worker ตรวจว่าวันถัดไปอยู่หลังวันที่บันทึก
+- public form ไม่มี API อ่านรายงาน/ดูสินค้าแยกต่างหาก, ไม่มีสิทธิ์แก้/ลบ; Worker ตรวจ schema, product IDs ตรงกับ catalog active, ต้องมีค่าอย่างน้อยหนึ่งช่อง และป้องกันรายงานซ้ำด้วย unique index บนวันที่บันทึก
 - ใช้ honeypot, จำกัด 5 requests/minute ต่อ IP ผ่าน Worker Rate Limiting binding, จำกัด body จริง 128 KB, no-store และ security headers; การจำกัด rate เป็น best-effort แบบกระจายตาม Cloudflare location
 - MCP ต้องยืนยันตัวตน client และผูกกับ admin allowlist; จำกัด scopes, มี audit/revocation และไม่เปิด endpoint สาธารณะ การเขียนผ่าน MCP ใช้ validation เดียวกับหน้าเว็บและไม่มี approval flow ซ้ำ
 
 ## 7. API ที่เสนอ
 
-- `GET /submit` — public, แสดงฟอร์มสต็อกและจำนวนสั่งสำหรับวันนี้พร้อม catalog active
-- `POST /submit` — public, write-only; สร้างรายงานวันนี้เท่านั้น ไม่อนุญาตให้แก้ย้อนหลัง และมี rate limit/duplicate guard
+- `GET /submit` — public, แสดงฟอร์มสต็อกและจำนวนสั่งพร้อม catalog active; ตั้งวันเริ่มต้นเป็นวันนี้
+- `POST /submit` — public, write-only; สร้างรายงานย้อนหลังหรือวันนี้ได้แต่ห้ามเป็นวันอนาคต วันถัดไปต้องอยู่หลังวันที่บันทึก และมี rate limit/duplicate guard
 - `GET /api/products` — สินค้าที่เปิดใช้และหน่วย/ป้ายสองภาษา
 - `POST /api/reports` — สร้างรายงานสต็อกประจำวัน พร้อม inventory lines
 - `GET /api/reports?from=&to=&status=` — ค้นรายงาน
@@ -184,7 +185,7 @@ React + TypeScript + Vite (UI ภาษาไทย/พม่ากำกับ)
 1. Scaffold repo เปล่า: Hono Worker, D1 migration, React/Vite UI, Wrangler config, CI build และคู่มือตั้งค่า โดยไม่ใส่ secrets
 2. สร้าง catalog สองภาษาและ migration พร้อม foreign keys, indexes, audit และ seed ป้ายชื่อจากหน้าอ้างอิง
 3. ทำ authentication แอดมินผ่าน Cloudflare Access + Worker allowlist และปกป้อง REST/MCP
-4. ทำ responsive admin form บันทึกข้อมูล และ public write-only form `GET/POST /submit` สำหรับรายงานวันนี้ พร้อม validation, honeypot, body limit และ rate limit
+4. ทำ responsive admin form บันทึกข้อมูล และ public write-only form `GET/POST /submit` สำหรับวันที่ย้อนหลังถึงวันนี้ พร้อม validation, auto next business date (ข้ามวันอาทิตย์), honeypot, body limit และ rate limit
 5. ทำ dashboard, รายงาน, filters, history, edit flow, CSV export และ audit; ไม่คำนวณหรืออนุมัติจำนวนสั่งอัตโนมัติ
 6. ทำ MCP tools สำหรับ read/create/update ผ่าน service layer เดียวกับ REST พร้อม scopes, rate-limit และ audit
 7. ตรวจ build, migrations บน local D1, API, auth, MCP และ mobile UI ด้วยข้อมูลทดสอบ
@@ -193,7 +194,7 @@ React + TypeScript + Vite (UI ภาษาไทย/พม่ากำกับ)
 ## 9. เกณฑ์สำเร็จ
 
 - หน้าฟอร์มภาษาไทยและป้ายพม่าตาม reference ครบทุกสินค้า/หน่วยที่ยืนยันแล้ว; ไม่มี label ว่างหรือทับกันบนมือถือ
-- ผู้ไม่มีสิทธิ์เข้า dashboard/REST API/MCP ไม่ได้; public เข้าได้เฉพาะ `/submit` และสร้างรายงานวันนี้ได้ โดยไม่มี endpoint อ่านหรือแก้ข้อมูลเดิม
+- ผู้ไม่มีสิทธิ์เข้า dashboard/REST API/MCP ไม่ได้; public เข้าได้เฉพาะ `/submit` และสร้างรายงานย้อนหลังหรือวันนี้ได้ โดยไม่มี endpoint อ่านหรือแก้ข้อมูลเดิม
 - ผู้ดูแลบันทึก/แก้ยอดคงเหลือและกรอกจำนวนสั่งเป็นถุงเองได้ทันที โดยไม่มีขั้นอนุมัติซ้ำหรือสูตรสั่งอัตโนมัติ
 - บันทึกรายวันแบบ atomic; public submit ได้ไม่เกิน 5 requests/minute ต่อ IP, payload เกิน 128 KB ถูกปฏิเสธ, วันที่อื่น/catalog เก่าถูกปฏิเสธ และ submit ซ้ำไม่สร้าง record ซ้ำ; admin edits มี revision/audit
 - รายงานยอดคงเหลือ/จำนวนถุงสั่งตรงกับ D1; ไม่มีการรวมยอดต่างหน่วยผิดพลาด

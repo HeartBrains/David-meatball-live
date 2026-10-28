@@ -43,10 +43,8 @@ app.post("/submit", async (c) => {
     return c.json({ success: false, error: { code: "INVALID_INPUT", message: "ตรวจสอบวันที่ ชื่อผู้บันทึก และข้อมูลสินค้าอีกครั้ง" } }, 400);
   }
   const today = currentBangkokDate();
-  const tomorrowDate = new Date(`${today}T12:00:00Z`);
-  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
-  if (parsed.data.reportDate !== today || parsed.data.nextDate !== tomorrowDate.toISOString().slice(0, 10)) {
-    return c.json({ success: false, error: { code: "DATE_OUT_OF_RANGE", message: "ฟอร์มสาธารณะใช้บันทึกข้อมูลของวันนี้เท่านั้น" } }, 400);
+  if (parsed.data.reportDate > today || parsed.data.nextDate <= parsed.data.reportDate) {
+    return c.json({ success: false, error: { code: "INVALID_DATE_RANGE", message: "วันที่บันทึกต้องไม่เกินวันนี้ และวันถัดไปต้องอยู่หลังวันที่บันทึก" } }, 400);
   }
   const products = await listProducts(c.env.DB);
   const submittedIds = new Set(parsed.data.lines.map((line) => line.productId));
